@@ -74,6 +74,9 @@ def fix_if_not_iso8601(s):
 
 def clean_data(df_drive, df_lap):
 
+    df_drive['date'] = df_drive['date'].astype(str)
+    df_lap['date_start'] = df_lap['date_start'].astype(str)
+
     df_drive['date'] = df_drive['date'].apply(fix_if_not_iso8601)
     df_lap['date_start'] = df_lap['date_start'].apply(fix_if_not_iso8601)
 
@@ -81,6 +84,8 @@ def clean_data(df_drive, df_lap):
     df_drive['lap_number'] = np.nan
 
     df_drive['date'] = pd.to_datetime(df_drive['date'], utc=True)
+    df_lap['date_start'] = pd.to_datetime(df_lap['date_start'], utc=True)
+
     RACE_START = pd.Timestamp('2023-05-28T13:03:13.519001+00:00')
     sector_cols = ['duration_sector_1', 'duration_sector_2', 'duration_sector_3']
 
@@ -126,14 +131,11 @@ def clean_data(df_drive, df_lap):
                     (df_drive['date'] < end_time)
             )
             df_drive.loc[mask, 'lap_number'] = lap_num
-            if lap_num == 1:
-                print(df_drive.loc[mask])
-                print(start_time, end_time)
-            elif lap_num == 2:
-                print(df_drive.loc[mask])
+
 
     # Finalize column type
     df_drive['lap_number'] = df_drive['lap_number'].astype('Int64')
+    df_drive.dropna(subset=['lap_number'], inplace=True)
     return df_drive, df_lap
 
 if __name__ == "__main__":
@@ -141,5 +143,5 @@ if __name__ == "__main__":
     df_lap = pd.read_csv('monaco_2023_laps.csv')
     df_drive_clean, df_lap_clean = clean_data(df_drive, df_lap)
 
-    print(df_drive_clean)
-    print(df_lap_clean)
+    print(df_drive_clean.shape)
+    print(df_lap_clean.shape)

@@ -138,10 +138,26 @@ def clean_data(df_drive, df_lap):
     df_drive.dropna(subset=['lap_number'], inplace=True)
     return df_drive, df_lap
 
+def merge_data(df_drive, df_lap):
+    # Perform right join
+    merged_df = pd.merge(
+        df_drive,
+        df_lap,
+        on=['driver_number', 'lap_number'],
+        how='right'
+    )
+
+    # Optional: sort by driver and lap
+    merged_df = merged_df.sort_values(by=['driver_number', 'lap_number', 'date'])
+
+    return merged_df
+
 if __name__ == "__main__":
     df_drive = fetch_driver_csv()
     df_lap = pd.read_csv('monaco_2023_laps.csv')
     df_drive_clean, df_lap_clean = clean_data(df_drive, df_lap)
+    merged_df = merge_data(df_drive_clean, df_lap_clean)
 
     print(df_drive_clean.shape)
     print(df_lap_clean.shape)
+    print(merged_df.shape)

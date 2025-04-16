@@ -1,5 +1,7 @@
 import requests
 import pandas as pd
+import numpy as np
+import regex as re
 
 years = [2021, 2022, 2023]
 data_types = ["laps", "stints"]
@@ -39,22 +41,105 @@ def download_and_save(endpoint, session_key, year):
     else:
         print(f"❌ Failed to fetch {endpoint} for {year}: HTTP {response.status_code}")
 
-# Loop through years and fetch/save lap and stint data
-# for year in years:
-#     print(f"\n🔎 Year: {year}")
-#     meeting_key = get_meeting_key(year)
-#     if meeting_key:
-#         session_key = get_session_key(meeting_key)
-#         if session_key:
-#             for data_type in data_types:
-#                 download_and_save(data_type, session_key, year)
-def fetch_driver_csv(num):
-    file_name = f"monaco_2023_car_data_driver_{num}.csv"
-    df = pd.read_csv(file_name)
-    return df
+def fetch_driver_csv():
+    df_list = []
 
-def c
+    for num in range(1, 82):
+        try:
+            file_name = f"monaco_2023_car_data_driver_{num}.csv"
+            df = pd.read_csv(file_name)
+            df['driver_number'] = num  # add the driver number explicitly
+            df_list.append(df)
+            print(f"Loaded: {file_name}")
+        except FileNotFoundError:
+            print(f"Skipping: {file_name} (not found)")
+        except Exception as e:
+            print(f"Error loading {file_name}: {e}")
+
+    # inside fetch_driver_csv()
+    if df_list:
+        return pd.concat(df_list, ignore_index=True)  # <- no comma here!
+    else:
+        return pd.DataFrame()
+
+def fix_if_not_iso8601(s):
+    iso8601_regex = re.compile(
+        r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{6}\+\d{2}:\d{2}$"
+    )
+    if isinstance(s, str) and not iso8601_regex.fullmatch(s):
+        # If it's missing microseconds and has timezone, patch it
+        return s.replace('+00:00', '.000000+00:00')
+    else:
+        return s
+
+def clean_data(df_drive, df_lap):
+
+    df_drive['date'] = df_drive['date'].apply(fix_if_not_iso8601)
+    df_lap['date_start'] = df_lap['date_start'].apply(fix_if_not_iso8601)
+
+    # Create an empty lap_number column in df_drive
+    df_drive['lap_number'] = np.nan
+
+    df_drive['date'] = pd.to_datetime(df_drive['date'], utc=True)
+    RACE_START = pd.Timestamp('2023-05-28T13:03:13.519001+00:00')
+    sector_cols = ['duration_sector_1', 'duration_sector_2', 'duration_sector_3']
+
+    # Iterate group-wise for matching meeting/session/driver
+    for (m_key, s_key, d_num), group in df_lap.groupby(['meeting_key', 'session_key', 'driver_number']):
+        # Inside the group loop
+        group = group.sort_values('lap_number').reset_index()  # keep original index for writing back
+        # original_indices = group['index']  # these are df_lap indices
+
+        if pd.isna(group.loc[0, 'date_start']):
+            # lap1_idx = original_indices[0]
+            # df_lap.at[lap1_idx, 'date_start'] = RACE_START
+            group.loc[0, 'date_start'] = RACE_START  # update local copy too
+
+        for i in range(len(group)):
+            lap_num = group.loc[i, 'lap_number']
+            # print(lap_num)
+            start_time = group.loc[i, 'date_start']
+
+            # Compute end_time
+            if i < len(group) - 1:
+                end_time = group.iloc[i + 1]['date_start']
+            else:
+                # Last lap: compute total duration in seconds and convert to timedelta
+                sector_times = group.loc[i, sector_cols]
+                if sector_times.notna().all():
+                    total_seconds = sector_times.sum()
+                    end_time = start_time + pd.to_timedelta(total_seconds, unit='s')
+                else:
+                    # Fallback to max drive time
+                    end_time = df_drive[
+                        (df_drive['meeting_key'] == m_key) &
+                        (df_drive['session_key'] == s_key) &
+                        (df_drive['driver_number'] == d_num)
+                        ]['date'].max()
+
+            # Apply annotation to df_drive
+            mask = (
+                    (df_drive['meeting_key'] == m_key) &
+                    (df_drive['session_key'] == s_key) &
+                    (df_drive['driver_number'] == d_num) &
+                    (df_drive['date'] >= start_time) &
+                    (df_drive['date'] < end_time)
+            )
+            df_drive.loc[mask, 'lap_number'] = lap_num
+            if lap_num == 1:
+                print(df_drive.loc[mask])
+                print(start_time, end_time)
+            elif lap_num == 2:
+                print(df_drive.loc[mask])
+
+    # Finalize column type
+    df_drive['lap_number'] = df_drive['lap_number'].astype('Int64')
+    return df_drive, df_lap
 
 if __name__ == "__main__":
-    df1 = fetch_driver_csv(1)
-    print(df1.head())
+    df_drive = fetch_driver_csv()
+    df_lap = pd.read_csv('monaco_2023_laps.csv')
+    df_drive_clean, df_lap_clean = clean_data(df_drive, df_lap)
+
+    print(df_drive_clean)
+    print(df_lap_clean)

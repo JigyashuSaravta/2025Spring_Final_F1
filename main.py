@@ -172,11 +172,15 @@ def merge_data(df_drive, df_lap):
 if __name__ == "__main__":
     df_drive = fetch_driver_csv()
     df_lap = pd.read_csv('monaco_2023_laps.csv')
-    df_race
     df_drive_clean, df_lap_clean = clean_data(df_drive, df_lap)
     agg_df = aggregate_df(df_drive_clean)
     merged_df = merge_data(agg_df, df_lap_clean)
+    df_yellow_flags = pd.read_csv('yellow_flags.csv')
+    merged_df_1 = pd.merge(merged_df, df_yellow_flags, on=['lap_number'], how='left')
 
     print(df_drive_clean.shape)
     print(df_lap_clean.shape)
     print(merged_df.shape)
+    print(merged_df_1.shape)
+
+    merged_df_1.to_csv('df_regression.csv', index=False)

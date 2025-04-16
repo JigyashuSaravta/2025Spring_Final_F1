@@ -138,6 +138,23 @@ def clean_data(df_drive, df_lap):
     df_drive.dropna(subset=['lap_number'], inplace=True)
     return df_drive, df_lap
 
+def aggregate_df(df_drive):
+    df_drive['brake_count'] = (df_drive['brake'] == 100).astype(int)
+
+    # DRS usage count (only when it's 10, 12, or 14)
+    df_drive['drs_count'] = df_drive['drs'].isin([10, 12, 14]).astype(int)
+
+    # Group and aggregate
+    agg_df = df_drive.groupby(['driver_number', 'lap_number']).agg({
+        'brake_count': 'sum',
+        'n_gear': 'mean',
+        'drs_count': 'sum',
+        'speed': 'mean',
+        'throttle': 'mean',
+        'rpm': 'mean'
+    }).reset_index()
+    return agg_df
+
 def merge_data(df_drive, df_lap):
     # Perform right join
     merged_df = pd.merge(
@@ -148,15 +165,17 @@ def merge_data(df_drive, df_lap):
     )
 
     # Optional: sort by driver and lap
-    merged_df = merged_df.sort_values(by=['driver_number', 'lap_number', 'date'])
+    merged_df = merged_df.sort_values(by=['driver_number', 'lap_number'])
 
     return merged_df
 
 if __name__ == "__main__":
     df_drive = fetch_driver_csv()
     df_lap = pd.read_csv('monaco_2023_laps.csv')
+    df_race
     df_drive_clean, df_lap_clean = clean_data(df_drive, df_lap)
-    merged_df = merge_data(df_drive_clean, df_lap_clean)
+    agg_df = aggregate_df(df_drive_clean)
+    merged_df = merge_data(agg_df, df_lap_clean)
 
     print(df_drive_clean.shape)
     print(df_lap_clean.shape)

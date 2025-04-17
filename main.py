@@ -3,7 +3,7 @@ import pandas as pd
 import numpy as np
 import regex as re
 
-years = [2021, 2022, 2023]
+years = [2021, 2022, 2023, 2024]
 data_types = ["laps", "stints"]
 country = "Monaco"
 

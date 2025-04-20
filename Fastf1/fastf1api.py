@@ -50,8 +50,43 @@
 #     except Exception as e:
 #         print(f"⚠️ Failed {year}: {e}")
 
+# import fastf1
+# import pandas as pd
+#
+# YEARS = range(2018, 2025)
+#
+# for year in YEARS:
+#     try:
+#         session = fastf1.get_session(year, 'Monaco', 'Race')
+#         session.load(laps=True, telemetry=False, weather=False, messages=True)
+#
+#         laps = session.laps
+#         laps['Year'] = year
+#
+#         selected_columns = [
+#             'Time', 'Driver', 'DriverNumber', 'LapTime', 'LapNumber', 'Stint',
+#             'PitOutTime', 'PitInTime',
+#             'Sector1Time', 'Sector2Time', 'Sector3Time',
+#             'Sector1SessionTime', 'Sector2SessionTime', 'Sector3SessionTime',
+#             'SpeedI1', 'SpeedI2', 'SpeedFL', 'SpeedST',
+#             'IsPersonalBest', 'Compound', 'TyreLife', 'FreshTyre',
+#             'Team', 'LapStartTime', 'LapStartDate', 'TrackStatus', 'Position',
+#             'Deleted', 'DeletedReason', 'FastF1Generated', 'IsAccurate',
+#             'Year'
+#         ]
+#
+#         laps_cleaned = laps[selected_columns].dropna(subset=["LapTime"])
+#
+#         file_name = f"monaco_laps_{year}.csv"
+#         laps_cleaned.to_csv(file_name, index=False)
+#         print(f"✅ Saved: {file_name}")
+#
+#     except Exception as e:
+#         print(f"❌ [ERROR] {year} Monaco Race could not be loaded: {e}")
+
+
 import fastf1
-import pandas as pd
+import pandas
 
 YEARS = range(2018, 2025)
 

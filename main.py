@@ -195,3 +195,138 @@ def aggregate_car_data(years, data_dir=".", output_prefix="aggregated_car_data")
     else:
         print("No data aggregated.")
         return pd.DataFrame()
+
+def fetch_weather_data(years, save_dir="."):
+    if not os.path.exists(save_dir):
+        os.makedirs(save_dir)
+
+    for year in years:
+        try:
+            print(f"Fetching weather data for Monaco {year}...")
+            session = fastf1.get_session(year, 'Monaco', 'Race')
+            session.load(telemetry=False, weather=True)
+
+            df_weather = session.weather_data.copy()
+            df_weather.to_csv(os.path.join(save_dir, f"weather_{year}.csv"), index=False)
+            print(f"  Saved weather_{year}.csv")
+        except Exception as e:
+            print(f"❌ Error fetching weather for {year}: {e}")
+
+def annotate_and_aggregate_weather(years, lap_data_dir=".", weather_dir=".", output_path="data/aggregated_weather_all_years.csv"):
+
+    aggregated_weather_dfs = []
+
+    for year in years:
+        try:
+            lap_file = os.path.join(lap_data_dir, f"monaco_laps_{year}.csv")
+            weather_file = os.path.join(weather_dir, f"weather_{year}.csv")
+
+            df_lap = pd.read_csv(lap_file)
+            df_weather = pd.read_csv(weather_file)
+
+            df_lap["Time"] = pd.to_timedelta(df_lap["Time"])
+            df_weather["Time"] = pd.to_timedelta(df_weather["Time"])
+            df_weather["LapNumber"] = None
+
+            lap_boundaries = df_lap.groupby("LapNumber")["Time"].min().reset_index().sort_values("LapNumber")
+
+            for i in range(len(lap_boundaries) - 1):
+                lap_num = lap_boundaries.iloc[i]["LapNumber"]
+                lap_start = lap_boundaries.iloc[i]["Time"]
+                lap_end = lap_boundaries.iloc[i + 1]["Time"]
+                mask = (df_weather["Time"] >= lap_start) & (df_weather["Time"] < lap_end)
+                df_weather.loc[mask, "LapNumber"] = lap_num
+
+            mask = df_weather["Time"] >= lap_boundaries.iloc[-1]["Time"]
+            df_weather.loc[mask, "LapNumber"] = lap_boundaries.iloc[-1]["LapNumber"]
+
+            df_weather = df_weather.dropna(subset=["LapNumber"])
+
+            if "Time" in df_weather.columns:
+                df_weather = df_weather.drop(columns=["Time"])
+
+            agg_funcs = {col: 'mean' for col in df_weather.columns if col not in ['LapNumber', 'Rainfall']}
+            if 'Rainfall' in df_weather.columns:
+                agg_funcs['Rainfall'] = 'sum'
+
+            df_agg = df_weather.groupby("LapNumber").agg(agg_funcs).reset_index()
+            df_agg["Year"] = year
+            aggregated_weather_dfs.append(df_agg)
+
+            print(f"  Processed weather for {year}")
+
+        except Exception as e:
+            print(f"❌ Could not process weather for {year}: {e}")
+
+    df_all = pd.concat(aggregated_weather_dfs, ignore_index=True)
+    df_all.to_csv(output_path, index=False)
+    print(f"✅ Aggregated weather saved to {output_path}")
+    return df_all
+
+def concat_lap_metadata(years, data_dir=".", output_path="lap_metadata_all_years.csv"):
+    """
+    Concatenates lap metadata files for all years into a single dataframe and saves to CSV.
+    """
+    lap_dfs = []
+    for year in years:
+        file_path = os.path.join(data_dir, f"monaco_laps_{year}.csv")
+        df = pd.read_csv(file_path)
+        df["Year"] = year
+        lap_dfs.append(df)
+
+    df_laps = pd.concat(lap_dfs, ignore_index=True)
+    df_laps.to_csv(os.path.join(data_dir, output_path), index=False)
+    print(f"✅ Saved all-year lap metadata to {output_path}")
+    return df_laps
+
+def merge_car_with_laps(car_data_path, lap_metadata_df, output_path="car_lap_merged.csv"):
+    """
+    Merges aggregated telemetry data with full lap metadata.
+    """
+    df_car = pd.read_csv(car_data_path)
+    merged = pd.merge(
+        df_car,
+        lap_metadata_df,
+        on=['DriverNumber', 'LapNumber', 'Year'],
+        how='right'
+    )
+    merged.to_csv(output_path, index=False)
+    print(f"✅ Merged car + lap data saved to {output_path}")
+    return merged
+
+def merge_with_weather(weather_data_path, car_lap_merged_df, output_path="merged_lap_car_weather_all_years.csv"):
+    """
+    Merges lap+car data with aggregated weather data.
+    """
+    df_weather = pd.read_csv(weather_data_path)
+    final_df = pd.merge(
+        df_weather,
+        car_lap_merged_df,
+        on=['LapNumber', 'Year'],
+        how='right'
+    )
+    final_df.to_csv(output_path, index=False)
+    print(f"✅ Final full dataset saved to {output_path}")
+    return final_df
+
+import os
+
+def cleanup_intermediate_csvs(directory="data", keep_filename="merged_lap_car_weather_all_years.csv"):
+    """
+    Removes all CSV files in the given directory except the specified final dataset.
+    """
+    deleted_files = []
+
+    for file in os.listdir(directory):
+        if file.endswith(".csv") and file != keep_filename:
+            try:
+                os.remove(os.path.join(directory, file))
+                deleted_files.append(file)
+            except Exception as e:
+                print(f"⚠️ Failed to delete {file}: {e}")
+
+    print(f"✅ Cleanup complete. Kept only: {keep_filename}")
+    if deleted_files:
+        print(f"🗑️ Deleted {len(deleted_files)} files:")
+        for f in deleted_files:
+            print(f"  - {f}")

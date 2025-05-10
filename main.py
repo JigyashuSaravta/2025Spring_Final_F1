@@ -1,9 +1,12 @@
 import os
 import pandas as pd
+import numpy as np
 import fastf1
 import re
 from glob import glob
-
+from sklearn.ensemble import RandomForestRegressor
+from sklearn.metrics import mean_squared_error, mean_absolute_error, r2_score
+from sklearn.model_selection import train_test_split
 
 def fetch_lap_data(years, save_dir="."):
     """
@@ -309,8 +312,6 @@ def merge_with_weather(weather_data_path, car_lap_merged_df, output_path="merged
     print(f"✅ Final full dataset saved to {output_path}")
     return final_df
 
-import os
-
 def cleanup_intermediate_csvs(directory="data", keep_filename="merged_lap_car_weather_all_years.csv"):
     """
     Removes all CSV files in the given directory except the specified final dataset.
@@ -330,3 +331,209 @@ def cleanup_intermediate_csvs(directory="data", keep_filename="merged_lap_car_we
         print(f"🗑️ Deleted {len(deleted_files)} files:")
         for f in deleted_files:
             print(f"  - {f}")
+
+def add_simulated_weight_column(
+    input_path="data/merged_lap_car_weather_all_years.csv",
+    output_path="data/regression_with_weight.csv",
+    total_laps=78,
+    seed=42
+):
+    """
+    Adds a simulated per-lap car weight column based on fuel burn and year-specific base weights.
+    Saves the result to a new CSV.
+    """
+    np.random.seed(seed)
+
+    # Load data
+    df = pd.read_csv(input_path)
+
+    # Minimum weight per FIA regulations
+    min_weights = {
+        2018: 734,
+        2019: 743,
+        2020: 746,
+        2021: 752,
+        2022: 795,
+        2023: 798,
+        2024: 798
+    }
+
+    # Cache for per-driver fuel strategy
+    fuel_cache = {}
+
+    def compute_weight(row):
+        year = row['Year']
+        driver = row['DriverNumber']
+        lap = row['LapNumber']
+        base_weight = min_weights[year]
+
+        key = (year, driver)
+        if key not in fuel_cache:
+            initial_fuel = np.random.uniform(100, 110)
+            final_fuel = np.random.uniform(1, 2)
+            burn_per_lap = (initial_fuel - final_fuel) / (total_laps - 1)
+            fuel_cache[key] = (initial_fuel, burn_per_lap)
+        else:
+            initial_fuel, burn_per_lap = fuel_cache[key]
+
+        current_fuel = initial_fuel - (lap - 1) * burn_per_lap
+        return base_weight + current_fuel
+
+    # Apply function
+    df['Weight'] = df.apply(compute_weight, axis=1)
+
+    # Save
+    df.to_csv(output_path, index=False)
+    print(f"✅ Weight column added and saved to {output_path}")
+    return df
+
+def preprocess_for_regression(
+    input_path="data/regression_ready_with_weight.csv",
+    output_path="data/regression_final.csv"
+):
+    """
+    Cleans and preprocesses the merged F1 dataset to prepare it for regression modeling.
+    Drops irrelevant columns, computes pit duration, encodes compounds, converts booleans,
+    and outputs final regression-ready CSV.
+    """
+    df = pd.read_csv(input_path)
+
+    # 1. Drop unnecessary columns
+    columns_to_drop = [
+        'AirTemp', 'Humidity', 'Pressure', 'WindDirection', 'WindSpeed', 'Rainfall',
+        'Time', 'Driver', 'Sector1Time', 'Sector2Time', 'Sector3Time',
+        'Sector1SessionTime', 'Sector2SessionTime', 'Sector3SessionTime',
+        'SpeedI1', 'SpeedI2', 'SpeedFL', 'SpeedST',
+        'Team', 'LapStartTime', 'LapStartDate', 'Position',
+        'Deleted', 'DeletedReason', 'FastF1Generated', 'IsAccurate'
+    ]
+    df.drop(columns=columns_to_drop, axis=1, inplace=True, errors='ignore')
+
+    # 2. Initialize PitDuration with correct dtype
+    df["PitDuration"] = pd.to_timedelta("NaT")
+    df["PitInTime"] = pd.to_timedelta(df["PitInTime"])
+    df["PitOutTime"] = pd.to_timedelta(df["PitOutTime"])
+
+    # 3. Calculate PitDuration for each pit-in event
+    for idx, row in df[df["PitInTime"].notna()].iterrows():
+        mask = (
+            (df["Year"] == row["Year"]) &
+            (df["DriverNumber"] == row["DriverNumber"]) &
+            (df["PitOutTime"].notna()) &
+            (df.index > idx)
+        )
+        next_pit_out = df[mask].head(1)
+        if not next_pit_out.empty:
+            out_time = next_pit_out["PitOutTime"].iloc[0]  # ✅ Correct fix
+            df.at[idx, "PitDuration"] = out_time - row["PitInTime"]
+
+    # 4. Encode compound types
+    compound_order = {
+        "HYPERSOFT": 1, "ULTRASOFT": 2, "SUPERSOFT": 3, "SOFT": 4,
+        "MEDIUM": 5, "HARD": 6, "INTERMEDIATE": 7, "WET": 8
+    }
+    df["Compound"] = df["Compound"].map(compound_order)
+
+    # 5. Drop columns no longer needed
+    df.drop(['Year', 'DriverNumber', 'Stint', 'PitInTime', 'PitOutTime'], axis=1, inplace=True)
+
+    # 6. Convert boolean columns to int
+    df["FreshTyre"] = df["FreshTyre"].astype(int)
+    df["IsPersonalBest"] = df["IsPersonalBest"].astype(int)
+
+    # 7. Convert time columns to seconds
+    df["LapTime"] = pd.to_timedelta(df["LapTime"]).dt.total_seconds()
+    df["PitDuration"] = pd.to_timedelta(df["PitDuration"]).dt.total_seconds()
+
+    # 8. Save result
+    df.to_csv(output_path, index=False)
+    print(f"✅ Final regression dataset saved to {output_path}")
+    return df
+
+def train_random_forest(df):
+    """
+    Train a Random Forest Regressor to predict LapTime from telemetry and weather features.
+
+    Args:
+        df (pd.DataFrame): Preprocessed regression dataset.
+
+    Returns:
+        model: Trained RandomForestRegressor model.
+        metrics (dict): Dictionary containing MSE, MAE, and R² score.
+        feature_data (pd.DataFrame): The feature matrix used for training (X).
+    """
+    # 1. Separate features and target
+    X = df.drop(['LapTime', 'FreshTyre', 'IsPersonalBest'], axis=1)
+    y = df['LapTime']
+
+    # 2. Train/test split
+    X_train, X_test, y_train, y_test = train_test_split(
+        X, y, test_size=0.2, random_state=1
+    )
+
+    # 3. Initialize and train model
+    model = RandomForestRegressor(n_estimators=100, random_state=42)
+    model.fit(X_train, y_train)
+
+    # 4. Evaluate
+    y_pred = model.predict(X_test)
+    mse = mean_squared_error(y_test, y_pred)
+    mae = mean_absolute_error(y_test, y_pred)
+    r2 = r2_score(y_test, y_pred)
+
+    print("\n📊 Random Forest Regression Results:")
+    print(f"• Mean Squared Error (MSE): {mse:.2f}")
+    print(f"• Mean Absolute Error (MAE): {mae:.2f}")
+    print(f"• R² Score: {r2:.4f}")
+
+    metrics = {
+        'MSE': mse,
+        'MAE': mae,
+        'R2': r2
+    }
+
+    return model, metrics, X
+
+def final_cleaning_for_model(
+    input_path="data/regression_final.csv",
+    output_path="data/regression_final_cleaned.csv"
+):
+    """
+    Applies final preprocessing steps: filtering flags, encoding track status,
+    filling missing values, and dropping unnecessary columns.
+    """
+    df = pd.read_csv(input_path)
+
+    # 1. Drop red flag laps
+    df = df[~df["TrackStatus"].astype(str).str.contains("5")].copy()
+
+    # 2. Encode TrackStatus
+    def map_status(status_str):
+        status_str = str(status_str)
+        if "4" in status_str:
+            return 3  # Safety Car
+        elif "6" in status_str:
+            return 2  # Virtual Safety Car
+        elif "2" in status_str:
+            return 1  # Yellow Flag
+        else:
+            return 0  # All Clear
+
+    df["TrackStatus"] = df["TrackStatus"].apply(map_status)
+
+    # 3. Drop unreliable gear column (optional)
+    if "nGear" in df.columns:
+        df.drop("nGear", axis=1, inplace=True)
+
+    # 4. Fill missing values
+    df["PitDuration"] = df["PitDuration"].fillna(0)
+    df["TrackTemp"] = df["TrackTemp"].fillna(df["TrackTemp"].median())
+    df["TyreLife"] = df["TyreLife"].fillna(df["TyreLife"].median())
+    df["Compound"] = df["Compound"].fillna(df["Compound"].mode()[0])
+
+    # 5. Save cleaned data
+    df.to_csv(output_path, index=False)
+    print(f"✅ Cleaned regression data saved to {output_path}")
+    return df
+
+

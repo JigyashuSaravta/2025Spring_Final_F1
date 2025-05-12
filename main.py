@@ -102,71 +102,25 @@ def extract_driver_number(filename):
     match = re.search(r'driver_(\d+)', filename)
     return match.group(1) if match else None
 
-def annotate_lap_number(year, data_dir="."):
-    print(f"Annotating lap numbers for {year}...")
-
-    lap_file = os.path.join(data_dir, f"monaco_laps_{year}.csv")
-    df_lap = pd.read_csv(lap_file)
-    df_lap['Time'] = pd.to_timedelta(df_lap['Time'])
-
-    # First lap time to use as timeline anchor
-    lap_start_time = df_lap['Time'].min()
-
-    car_files = sorted(glob(os.path.join(data_dir, f"car_data_{year}_driver_*.csv")))
-    car_data_frames = []
-
-    for car_file in car_files:
-        driver_number = extract_driver_number(car_file)
-        df_car = pd.read_csv(car_file)
-
-        # Align telemetry clock to official lap time clock
-        car_start_date = pd.to_datetime(df_car['Date'].iloc[0])
-        df_car['Time'] = pd.to_datetime(df_car['Date']) - car_start_date + lap_start_time
-
-        df_car['DriverNumber'] = int(driver_number)
-        car_data_frames.append(df_car)
-
-    if not car_data_frames:
-        print(f"No car data found for {year}. Skipping...")
-        return
-
-    df_car = pd.concat(car_data_frames, ignore_index=True)
-    df_car['LapNumber'] = None
-
-    df_lap = df_lap[['DriverNumber', 'LapNumber', 'Time']].copy().sort_values(['DriverNumber', 'LapNumber'])
-
-    for driver in df_lap['DriverNumber'].unique():
-        driver_laps = df_lap[df_lap['DriverNumber'] == driver].sort_values('LapNumber')
-        driver_car_data = df_car['DriverNumber'] == driver
-
-        for i in range(len(driver_laps) - 1):
-            lap_start = driver_laps.iloc[i]['Time']
-            lap_end = driver_laps.iloc[i + 1]['Time']
-            lap_number = driver_laps.iloc[i]['LapNumber']
-
-            in_lap = driver_car_data & (df_car['Time'] >= lap_start) & (df_car['Time'] < lap_end)
-            df_car.loc[in_lap, 'LapNumber'] = lap_number
-
-        # Assign final lap
-        last_lap = driver_laps.iloc[-1]
-        in_last_lap = driver_car_data & (df_car['Time'] >= last_lap['Time'])
-        df_car.loc[in_last_lap, 'LapNumber'] = last_lap['LapNumber']
-
-    df_car = df_car.dropna(subset=['LapNumber'])
-
-    output_file = os.path.join(data_dir, f"car_data_with_lap_{year}.csv")
-    df_car.to_csv(output_file, index=False)
-    print(f"Saved annotated car data to {output_file} with {len(df_car)} rows.")
-
 def aggregate_car_data(years, data_dir=".", output_prefix="aggregated_car_data"):
     all_dfs = []
 
     for year in years:
         print(f"Aggregating car data for {year}...")
-        file_path = os.path.join(data_dir, f"car_data_with_lap_{year}.csv")
-        try:
-            df = pd.read_csv(file_path)
 
+        # Use glob to get all car_data files for this year
+        file_pattern = os.path.join(data_dir, f"car_data_{year}_driver_*.csv")
+        car_files = glob(file_pattern)
+
+        if not car_files:
+            print(f"No files found for {year}. Skipping...")
+            continue
+
+        # Read and concatenate all files
+        dfs = [pd.read_csv(f) for f in car_files]
+        df = pd.concat(dfs, ignore_index=True)
+
+        try:
             df['Brake'] = df['Brake'].astype(bool)
             df['LapNumber'] = df['LapNumber'].astype(int)
             df = df[df['nGear'] < 9]
@@ -186,8 +140,8 @@ def aggregate_car_data(years, data_dir=".", output_prefix="aggregated_car_data")
 
             print(f"Saved: {output_file}")
 
-        except FileNotFoundError:
-            print(f"File not found for {year}. Skipping...")
+        except Exception as e:
+            print(f"Failed processing {year}: {e}")
 
     if all_dfs:
         df_all = pd.concat(all_dfs, ignore_index=True)
@@ -198,6 +152,7 @@ def aggregate_car_data(years, data_dir=".", output_prefix="aggregated_car_data")
     else:
         print("No data aggregated.")
         return pd.DataFrame()
+
 
 def fetch_weather_data(years, save_dir="."):
     if not os.path.exists(save_dir):

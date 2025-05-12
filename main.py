@@ -468,11 +468,11 @@ def train_random_forest(df):
 
     # 2. Train/test split
     X_train, X_test, y_train, y_test = train_test_split(
-        X, y, test_size=0.2, random_state=1
+        X, y, test_size=0.2 #, random_state=1
     )
 
     # 3. Initialize and train model
-    model = RandomForestRegressor(n_estimators=100, random_state=42)
+    model = RandomForestRegressor(max_depth=40, n_estimators=300, min_samples_split=2, min_samples_leaf=1)
     model.fit(X_train, y_train)
 
     # 4. Evaluate

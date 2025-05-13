@@ -11,7 +11,32 @@ from scipy.stats import ttest_ind
 
 def fetch_lap_data(years, save_dir="."):
     """
-    Fetches lap data for Monaco GP for the given years and saves them as CSVs.
+    Fetches lap data for Monaco GP for the given years and saves them as CSV files.
+
+    Parameters:
+        years (list of int): List of seasons/years to fetch Monaco GP lap data for.
+        save_dir (str): Directory path to save the CSV files. Defaults to current directory.
+
+    Returns:
+        None
+
+    Side Effects:
+        - Creates one CSV file per year named 'monaco_laps_<year>.csv' in save_dir.
+        - Prints progress and error messages to console.
+
+    Example (successful fetch):
+        >>> fetch_lap_data([2023], save_dir="test_data")
+        Fetching lap data for Monaco 2023
+        Saved lap data to test_data/monaco_laps_2023.csv
+
+    Example (mixed results with valid and invalid years):
+        >>> fetch_lap_data([1800, 2023, 2024], save_dir="test_data")  # doctest: +ELLIPSIS
+        Fetching lap data for Monaco 1800
+        Error fetching lap data for 1800: ...
+        Fetching lap data for Monaco 2023
+        Saved lap data to test_data/monaco_laps_2023.csv
+        Fetching lap data for Monaco 2024
+        Saved lap data to test_data/monaco_laps_2024.csv
     """
     if not os.path.exists(save_dir):
         os.makedirs(save_dir)
@@ -47,14 +72,33 @@ def fetch_lap_data(years, save_dir="."):
 
 def fetch_car_data(years, save_dir="."):
     """
-    Fetches car telemetry data per driver using public FastF1 API.
-    Output is saved in the same format as legacy car_data_YYYY_driver_XX.csv files.
+    Fetches per-driver car telemetry data for Monaco GP for each specified year
+    using the FastF1 API. Saves individual CSV files for each driver.
+
+    Parameters:
+        years (list of int): List of years (e.g., [2023, 2024]) to fetch telemetry data for.
+        save_dir (str): Directory to save the output CSV files. Defaults to current directory.
+
+    Returns:
+        None
+
+    Side Effects:
+        - Creates CSV files named as 'car_data_<year>_driver_<driver_number>.csv' in save_dir.
+        - Prints progress and error messages to stdout.
+
+    Example (with one invalid and one valid year):
+        >>> fetch_car_data([1800, 2023], save_dir="test_data")  # doctest: +ELLIPSIS
+        Fetching car data for Monaco 1800
+        Error loading session for 1800: ...
+        Fetching car data for Monaco 2023
+          Saved test_data/car_data_2023_driver_...
+          ...
     """
     if not os.path.exists(save_dir):
         os.makedirs(save_dir)
 
     for year in years:
-        print(f"Fetching car data for Monaco {year}...")
+        print(f"Fetching car data for Monaco {year}")
         try:
             session = fastf1.get_session(year, 'Monaco', 'Race')
             session.load(telemetry=True)
@@ -100,21 +144,75 @@ def fetch_car_data(years, save_dir="."):
             print(f"Error loading session for {year}: {e}")
 
 def extract_driver_number(filename):
+    """
+    Extracts the driver number from a filename using a regular expression.
+
+    This function assumes that the filename contains a segment like 'driver_XX',
+    where XX is a numeric driver identifier.
+
+    Parameters:
+    ----------
+    filename : str
+        The filename string from which to extract the driver number.
+
+    Returns:
+    -------
+    str or None
+        The driver number as a string if found, otherwise None.
+
+    Examples:
+    --------
+    >>> extract_driver_number("car_data_2021_driver_44.csv")
+    '44'
+    >>> extract_driver_number("car_data_driver_abc.csv") is None
+    True
+    >>> extract_driver_number("telemetry_2022_driver_7.csv")
+    '7'
+    """
     match = re.search(r'driver_(\d+)', filename)
     return match.group(1) if match else None
 
 def aggregate_car_data(years, data_dir=".", output_prefix="aggregated_car_data"):
+    """
+    Aggregates per-driver car telemetry data (RPM, gear, throttle, brake, DRS)
+    from individual CSV files for specified years. Saves per-year and combined
+    aggregate CSVs.
+
+    Parameters:
+        years (list of int): List of years to aggregate telemetry for.
+        data_dir (str): Directory containing the 'car_data_<year>_driver_<id>.csv' files.
+        output_prefix (str): Prefix used for naming the output aggregated files.
+
+    Returns:
+        pd.DataFrame: Combined DataFrame with aggregated telemetry data for all years.
+                      If no files found, returns empty DataFrame.
+
+    Side Effects:
+        - Saves per-year CSVs named as '<output_prefix>_<year>.csv'.
+        - Saves a combined CSV named '<output_prefix>_all_years.csv'.
+        - Prints progress and error messages to stdout.
+
+    Doctest Example:
+        >>> aggregate_car_data([1924, 2023], data_dir="test_data", output_prefix="test_output")
+        Aggregating car data for 1924
+        No files found for 1924. Skipping
+        Aggregating car data for 2023
+        Saved: test_data/test_output_2023.csv
+        Saved combined: test_data/test_output_all_years.csv
+        ...
+    """
+
     all_dfs = []
 
     for year in years:
-        print(f"Aggregating car data for {year}...")
+        print(f"Aggregating car data for {year}")
 
         # Use glob to get all car_data files for this year
         file_pattern = os.path.join(data_dir, f"car_data_{year}_driver_*.csv")
         car_files = glob(file_pattern)
 
         if not car_files:
-            print(f"No files found for {year}. Skipping...")
+            print(f"No files found for {year}. Skipping")
             continue
 
         # Read and concatenate all files
@@ -154,14 +252,37 @@ def aggregate_car_data(years, data_dir=".", output_prefix="aggregated_car_data")
         print("No data aggregated.")
         return pd.DataFrame()
 
-
 def fetch_weather_data(years, save_dir="."):
+    """
+    Fetches weather data for the Monaco GP race session for the specified years
+    using the FastF1 API and saves them as CSV files.
+
+    Parameters:
+        years (list of int): List of years to fetch weather data for.
+        save_dir (str): Directory where the CSV files will be saved. Defaults to current directory.
+
+    Returns:
+        None
+
+    Side Effects:
+        - Saves weather data CSVs as 'weather_<year>.csv' in the specified directory.
+        - Creates the save directory if it does not exist.
+        - Prints progress and error messages to stdout.
+
+    Doctest Example:
+        >>> fetch_weather_data(["MMXX", 2023], save_dir="test_data")  # doctest: +ELLIPSIS
+        Fetching weather data for Monaco MMXX
+        ❌ Error fetching weather for MMXX: ...
+        Fetching weather data for Monaco 2023
+          Saved weather_2023.csv
+        ...
+    """
     if not os.path.exists(save_dir):
         os.makedirs(save_dir)
 
     for year in years:
         try:
-            print(f"Fetching weather data for Monaco {year}...")
+            print(f"Fetching weather data for Monaco {year}")
             session = fastf1.get_session(year, 'Monaco', 'Race')
             session.load(telemetry=False, weather=True)
 
@@ -224,7 +345,26 @@ def annotate_and_aggregate_weather(years, lap_data_dir=".", weather_dir=".", out
 
 def concat_lap_metadata(years, data_dir=".", output_path="lap_metadata_all_years.csv"):
     """
-    Concatenates lap metadata files for all years into a single dataframe and saves to CSV.
+    Concatenates Monaco lap metadata CSVs across multiple years into one DataFrame,
+    adds a 'Year' column to each, and saves the combined DataFrame as a new CSV.
+
+    Parameters:
+        years (list of int): List of years to include (must have corresponding 'monaco_laps_<year>.csv' files).
+        data_dir (str): Directory where the lap CSVs are stored. Defaults to current directory.
+        output_path (str): Output filename for the combined CSV. Relative to data_dir.
+
+    Returns:
+        pd.DataFrame: Combined DataFrame with all laps and a 'Year' column.
+
+    Side Effects:
+        - Saves the combined DataFrame to the specified output_path.
+        - Prints a success message with file path.
+
+    Doctest Example:
+        >>> concat_lap_metadata([1746, 2021, 2023], data_dir="test_data", output_path="combined.csv")  # doctest: +ELLIPSIS
+        Traceback (most recent call last):
+        ...
+        FileNotFoundError: [Errno 2] No such file or directory: 'test_data/monaco_laps_1746.csv'
     """
     lap_dfs = []
     for year in years:

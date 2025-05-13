@@ -809,3 +809,58 @@ def t_test_hypothesis1(df_v10, df_v6):
     print(f"\nMean Race Time (V10): {mean_v10:.2f} seconds")
     print(f"Mean Race Time (V6): {mean_v6:.2f} seconds")
     print(f"Difference: {mean_v6 - mean_v10:.2f} seconds (V6 - V10)")
+
+def simulate_lapwise_weight_threshold_effect(model, laps, df_random, car_type='V10', n_samples=5000, weight_threshold=700):
+    """
+    Monte Carlo test of per-lap weight threshold effect using lap-wise comparison.
+
+    Args:
+    - model: trained regression model
+    - laps: fixed lap template
+    - df_random: random input source
+    - car_type: 'V6' or 'V10'
+    - n_samples: number of simulations
+    - weight_threshold: threshold in kg for separating groups
+
+    Returns:
+    - low_weight_laps: all lap times with weight < threshold
+    - high_weight_laps: all lap times with weight ≥ threshold
+    """
+    low_weight_laps = []
+    high_weight_laps = []
+
+    for _ in range(n_samples):
+        sim_df = generate_full_lap_data(laps.copy(), df_random, car_type=car_type)
+
+        # Ensure correct column order
+        feature_cols = ['TrackTemp', 'RPM', 'Throttle', 'Brake', 'DRS',
+                        'Compound', 'TyreLife', 'TrackStatus', 'Weight', 'PitDuration']
+        sim_df = sim_df[feature_cols]
+
+        # Predict lap times
+        lap_times = model.predict(sim_df)
+
+        # Append lap times to appropriate group
+        for lap_time, weight in zip(lap_times, sim_df['Weight']):
+            if weight < weight_threshold:
+                low_weight_laps.append(lap_time)
+            else:
+                high_weight_laps.append(lap_time)
+
+    # Perform one-tailed t-test
+    t_stat, p_value = ttest_ind(low_weight_laps, high_weight_laps, alternative='less')
+
+    print(f"\n--- Per-Lap Weight Threshold Test at {weight_threshold}kg ---")
+    print(f"Low Weight Lap Count:  {len(low_weight_laps)}")
+    print(f"High Weight Lap Count: {len(high_weight_laps)}")
+    print(f"Mean Lap Time (< {weight_threshold}kg):  {np.mean(low_weight_laps):.4f} s")
+    print(f"Mean Lap Time (≥ {weight_threshold}kg): {np.mean(high_weight_laps):.4f} s")
+    print(f"T-statistic: {t_stat:.4f}")
+    print(f"P-value: {p_value:.6f}")
+
+    if p_value < 0.05:
+        print("✅ Reject Null Hypothesis — Lower weight leads to significantly faster laps.")
+    else:
+        print("❌ Fail to Reject Null — No significant lap time difference based on weight.")
+
+    return low_weight_laps, high_weight_laps

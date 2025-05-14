@@ -28,18 +28,15 @@ This project uses real-world telemetry and weather data from the Formula 1 Monac
 
 ### 1. Clone the Repository
 
-```bash
-git clone https://github.com/your_username/f1-laptime-mcsim.git
+git clone https://github.com/JigyashuSaravta/2025Spring_Final_F1
 cd f1-laptime-mcsim
-```
 
 ### 2. Install Required Packages
 
 This project requires Python 3.9+ and the following libraries:
 
-```bash
 pip install fastf1 pandas numpy scikit-learn matplotlib
-```
+
 
 **Note:** The first time you run FastF1, it may take some time to cache session data.
 
@@ -51,9 +48,8 @@ pip install fastf1 pandas numpy scikit-learn matplotlib
 
 This will fetch all data, preprocess it, and create the final merged dataset.
 
-```bash
 python analysis_and_mcsim.py
-```
+
 
 This script will:
 
@@ -68,22 +64,8 @@ This script will:
 
 ## Output
 
-* `data/merged_lap_car_weather_all_years.csv`: Final cleaned dataset before modeling
-* `data/regression_final_cleaned.csv`: Fully preprocessed dataset ready for modeling
 * Console output showing:
-
   * Regression model performance (MSE, MAE, R²)
-  * Monte Carlo simulation statistics (mean race time, variance)
-* Optional: Simulation result files (`race_times_df_v6.csv`, `race_times_df_v10.csv`) if saved manually
-
----
-
-## Features
-
-* Realistic modeling of car weight degradation by lap
-* Track temperature drift simulation
-* Piecewise regression-based RPM generation
-* Monte Carlo simulations with 5000 runs
-* V6 vs V10 engine strategy comparison
+  * Monte Carlo simulation results
 
 ---

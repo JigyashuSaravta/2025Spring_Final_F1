@@ -25,7 +25,7 @@ def fetch_lap_data(years, save_dir="."):
         - Prints progress and error messages to console.
 
     Example (successful fetch):
-        >>> fetch_lap_data([2023], save_dir="test_data")
+        >>> fetch_lap_data([2023], save_dir="test_data") # doctest: +ELLIPSIS
         Fetching lap data for Monaco 2023
         Saved lap data to test_data/monaco_laps_2023.csv
 
@@ -43,7 +43,7 @@ def fetch_lap_data(years, save_dir="."):
 
     for year in years:
         try:
-            print(f"Fetching lap data for Monaco {year}...")
+            print(f"Fetching lap data for Monaco {year}")
             session = fastf1.get_session(year, 'Monaco', 'Race')
             session.load(laps=True, telemetry=False, weather=False, messages=True)
 
@@ -193,7 +193,7 @@ def aggregate_car_data(years, data_dir=".", output_prefix="aggregated_car_data")
         - Prints progress and error messages to stdout.
 
     Doctest Example:
-        >>> aggregate_car_data([1924, 2023], data_dir="test_data", output_prefix="test_output")
+        >>> aggregate_car_data([1924, 2023], data_dir="test_data", output_prefix="test_output")  # doctest: +ELLIPSIS
         Aggregating car data for 1924
         No files found for 1924. Skipping
         Aggregating car data for 2023
@@ -272,10 +272,9 @@ def fetch_weather_data(years, save_dir="."):
     Doctest Example:
         >>> fetch_weather_data(["MMXX", 2023], save_dir="test_data")  # doctest: +ELLIPSIS
         Fetching weather data for Monaco MMXX
-        ❌ Error fetching weather for MMXX: ...
+        Error fetching weather for MMXX: ...
         Fetching weather data for Monaco 2023
           Saved weather_2023.csv
-        ...
     """
     if not os.path.exists(save_dir):
         os.makedirs(save_dir)
@@ -290,7 +289,7 @@ def fetch_weather_data(years, save_dir="."):
             df_weather.to_csv(os.path.join(save_dir, f"weather_{year}.csv"), index=False)
             print(f"  Saved weather_{year}.csv")
         except Exception as e:
-            print(f"❌ Error fetching weather for {year}: {e}")
+            print(f"Error fetching weather for {year}: {e}")
 
 def annotate_and_aggregate_weather(years, lap_data_dir=".", weather_dir=".", output_path="data/aggregated_weather_all_years.csv"):
 
@@ -336,11 +335,11 @@ def annotate_and_aggregate_weather(years, lap_data_dir=".", weather_dir=".", out
             print(f"  Processed weather for {year}")
 
         except Exception as e:
-            print(f"❌ Could not process weather for {year}: {e}")
+            print(f"Could not process weather for {year}: {e}")
 
     df_all = pd.concat(aggregated_weather_dfs, ignore_index=True)
     df_all.to_csv(output_path, index=False)
-    print(f"✅ Aggregated weather saved to {output_path}")
+    print(f" Aggregated weather saved to {output_path}")
     return df_all
 
 def concat_lap_metadata(years, data_dir=".", output_path="lap_metadata_all_years.csv"):
@@ -375,7 +374,7 @@ def concat_lap_metadata(years, data_dir=".", output_path="lap_metadata_all_years
 
     df_laps = pd.concat(lap_dfs, ignore_index=True)
     df_laps.to_csv(os.path.join(data_dir, output_path), index=False)
-    print(f"✅ Saved all-year lap metadata to {output_path}")
+    print(f" Saved all-year lap metadata to {output_path}")
     return df_laps
 
 def merge_car_with_laps(car_data_path, lap_metadata_df, output_path="car_lap_merged.csv"):
@@ -390,7 +389,7 @@ def merge_car_with_laps(car_data_path, lap_metadata_df, output_path="car_lap_mer
         how='right'
     )
     merged.to_csv(output_path, index=False)
-    print(f"✅ Merged car + lap data saved to {output_path}")
+    print(f" Merged car + lap data saved to {output_path}")
     return merged
 
 def merge_with_weather(weather_data_path, car_lap_merged_df, output_path="merged_lap_car_weather_all_years.csv"):
@@ -405,7 +404,7 @@ def merge_with_weather(weather_data_path, car_lap_merged_df, output_path="merged
         how='right'
     )
     final_df.to_csv(output_path, index=False)
-    print(f"✅ Final full dataset saved to {output_path}")
+    print(f" Final full dataset saved to {output_path}")
     return final_df
 
 def cleanup_intermediate_csvs(directory="data", keep_filename="merged_lap_car_weather_all_years.csv"):
@@ -422,9 +421,9 @@ def cleanup_intermediate_csvs(directory="data", keep_filename="merged_lap_car_we
             except Exception as e:
                 print(f"⚠️ Failed to delete {file}: {e}")
 
-    print(f"✅ Cleanup complete. Kept only: {keep_filename}")
+    print(f" Cleanup complete. Kept only: {keep_filename}")
     if deleted_files:
-        print(f"🗑️ Deleted {len(deleted_files)} files:")
+        print(f"Deleted {len(deleted_files)} files:")
         for f in deleted_files:
             print(f"  - {f}")
 
@@ -435,8 +434,40 @@ def add_simulated_weight_column(
     seed=42
 ):
     """
-    Adds a simulated per-lap car weight column based on fuel burn and year-specific base weights.
-    Saves the result to a new CSV.
+    Adds a simulated car weight column to a race dataset by estimating per-lap fuel burn
+    and combining it with FIA-regulated minimum car weight per year.
+
+    The weight is calculated for each row based on the lap number, a randomized
+    starting and ending fuel amount per driver, and the known FIA base weights.
+
+    Parameters:
+        input_path (str): Path to the CSV file containing the race dataset.
+                          Must include columns ['Year', 'DriverNumber', 'LapNumber'].
+        output_path (str): Path where the updated CSV with the 'Weight' column will be saved.
+        total_laps (int): Total number of laps in the race (default = 78).
+        seed (int): Random seed for reproducibility of fuel burn simulations.
+
+    Returns:
+        pd.DataFrame: Modified DataFrame with an additional 'Weight' column.
+
+    Side Effects:
+        - Writes the updated DataFrame to the specified output_path.
+
+    Doctest Examples:
+        >>> import pandas as pd
+        >>> test_df = pd.DataFrame({
+        ...     'Year': [2024]*3,
+        ...     'DriverNumber': [1, 1, 1],
+        ...     'LapNumber': [1, 2, 3]
+        ... })
+        >>> test_df.to_csv("test_input.csv", index=False)
+        >>> _ = add_simulated_weight_column("test_input.csv", "test_output.csv", total_laps=3, seed=0)
+         Weight column added and saved to test_output.csv
+        >>> df_out = pd.read_csv("test_output.csv")
+        >>> len(df_out['Weight']) == len(df_out)
+        True
+        >>> isinstance(df_out['Weight'].median(), (int, float))  # median should be numeric
+        True
     """
     np.random.seed(seed)
 
@@ -480,7 +511,7 @@ def add_simulated_weight_column(
 
     # Save
     df.to_csv(output_path, index=False)
-    print(f"✅ Weight column added and saved to {output_path}")
+    print(f" Weight column added and saved to {output_path}")
     return df
 
 def preprocess_for_regression(
@@ -520,7 +551,7 @@ def preprocess_for_regression(
         )
         next_pit_out = df[mask].head(1)
         if not next_pit_out.empty:
-            out_time = next_pit_out["PitOutTime"].iloc[0]  # ✅ Correct fix
+            out_time = next_pit_out["PitOutTime"].iloc[0]  #  Correct fix
             df.at[idx, "PitDuration"] = out_time - row["PitInTime"]
 
     # 4. Encode compound types
@@ -543,7 +574,7 @@ def preprocess_for_regression(
 
     # 8. Save result
     df.to_csv(output_path, index=False)
-    print(f"✅ Final regression dataset saved to {output_path}")
+    print(f" Final regression dataset saved to {output_path}")
     return df
 
 def train_random_forest(df):
@@ -551,12 +582,43 @@ def train_random_forest(df):
     Train a Random Forest Regressor to predict LapTime from telemetry and weather features.
 
     Args:
-        df (pd.DataFrame): Preprocessed regression dataset.
+        df (pd.DataFrame): Preprocessed regression dataset. Must contain the following columns:
+            - 'LapNumber', 'LapTime', 'FreshTyre', 'IsPersonalBest'
+            - All model input features (e.g., 'Throttle', 'Brake', 'TrackTemp', etc.)
 
     Returns:
-        model: Trained RandomForestRegressor model.
-        metrics (dict): Dictionary containing MSE, MAE, and R² score.
-        feature_data (pd.DataFrame): The feature matrix used for training (X).
+        model (RandomForestRegressor): Trained scikit-learn model.
+        metrics (dict): Dictionary with:
+            - 'MSE': float, Mean Squared Error on test set
+            - 'MAE': float, Mean Absolute Error on test set
+            - 'R2': float, R² score on test set
+        feature_data (pd.DataFrame): Feature matrix `X` used for model training.
+
+    Doctest:
+        >>> import pandas as pd
+        >>> data = {
+        ...     'LapNumber': [1, 2, 3, 4, 5],
+        ...     'LapTime': [90.0, 91.5, 89.2, 92.1, 90.7],
+        ...     'FreshTyre': [1, 0, 1, 0, 1],
+        ...     'IsPersonalBest': [1, 0, 0, 1, 0],
+        ...     'Throttle': [80, 82, 78, 85, 83],
+        ...     'Brake': [0, 1, 1, 0, 1],
+        ...     'DRS': [2, 3, 1, 4, 3],
+        ...     'Compound': [5, 5, 6, 6, 5],
+        ...     'TyreLife': [5, 6, 7, 8, 9],
+        ...     'TrackStatus': [0, 1, 0, 0, 1],
+        ...     'Weight': [820, 819, 818, 817, 816],
+        ...     'PitDuration': [0.0, 0.0, 0.0, 20.3, 0.0],
+        ...     'TrackTemp': [35.0, 34.5, 36.2, 33.9, 34.8]
+        ... }
+        >>> df_test = pd.DataFrame(data)
+        >>> model, metrics, X = train_random_forest(df_test) # doctest: +ELLIPSIS
+        Random Forest Regression Results:
+        ...
+        >>> X.shape[1] == 9  # 13 cols - 4 dropped: ['LapNumber', 'LapTime', 'FreshTyre', 'IsPersonalBest']
+        True
+        >>> all(isinstance(v, (int, float)) for v in metrics.values())
+        True
     """
     # 1. Separate features and target
     X = df.drop(['LapNumber','LapTime', 'FreshTyre', 'IsPersonalBest'], axis=1)
@@ -577,7 +639,7 @@ def train_random_forest(df):
     mae = mean_absolute_error(y_test, y_pred)
     r2 = r2_score(y_test, y_pred)
 
-    print("\n📊 Random Forest Regression Results:")
+    print("Random Forest Regression Results:")
     print(f"• Mean Squared Error (MSE): {mse:.2f}")
     print(f"• Mean Absolute Error (MAE): {mae:.2f}")
     print(f"• R² Score: {r2:.4f}")
@@ -629,7 +691,7 @@ def final_cleaning_for_model(
 
     # 5. Save cleaned data
     df.to_csv(output_path, index=False)
-    print(f"✅ Cleaned regression data saved to {output_path}")
+    print(f" Cleaned regression data saved to {output_path}")
     return df
 
 def randomize_tracktemp(df_random,
@@ -687,10 +749,22 @@ def generate_weight_per_lap(car_type='V10'):
     Generate a dataframe of Weight per LapNumber for a given car type.
 
     Args:
-    - car_type: String, either 'V6' or 'V10'
+        car_type (str): Either 'V6' or 'V10', representing the type of F1 engine.
 
     Returns:
-    - weight_df: DataFrame with columns ['LapNumber', 'Weight']
+        pd.DataFrame: A dataframe with 78 rows and two columns:
+            - 'LapNumber' (int): Lap number from 1 to 78
+            - 'Weight' (float): Total car weight including fuel at each lap
+
+    Raises:
+        ValueError: If car_type is not 'V6' or 'V10'
+
+    Doctest:
+        >>> df_weight = generate_weight_per_lap('v10')
+        >>> lap20 = df_weight[df_weight['LapNumber'] == 20]['Weight'].values[0]
+        >>> lap70 = df_weight[df_weight['LapNumber'] == 70]['Weight'].values[0]
+        >>> lap70 < lap20
+        np.True_
     """
 
     # Define base weights for each car type
@@ -813,7 +887,6 @@ def generate_throttle_rpm_per_lap(df_random, car_type='V10', transition_throttle
 
     return result_df
 
-
 def generate_full_lap_data(laps, df_random, car_type):
     """
     Generates a full dataset per lap by combining fixed variables (laps) with
@@ -878,7 +951,6 @@ def create_fixed_variables(df_source):
         laps['LapNumber'] - 31                # Restart count from 1 after pit stop
     )
     laps.drop(columns=['Throttle'], inplace=True)
-    #laps.to_csv('MC_Fixed_data.csv', index=False)
     return laps
 
 def monte_carlo_simulation(model, laps, df_random, car_type, n_simulations=5000):
@@ -939,9 +1011,9 @@ def t_test_hypothesis1(df_v10, df_v6):
     print(f"P-value = {p_value:.10f}")
 
     if p_value < 0.05:
-        print("✅ **Reject Null Hypothesis**: V10 hybrid engines yield significantly faster race times than V6 (p < 0.05).")
+        print(" **Reject Null Hypothesis**: V10 hybrid engines yield significantly faster race times than V6 (p < 0.05).")
     else:
-        print("❌ **Fail to Reject Null Hypothesis**: No significant evidence that V10 is faster than V6 (p ≥ 0.05).")
+        print("**Fail to Reject Null Hypothesis**: No significant evidence that V10 is faster than V6 (p ≥ 0.05).")
 
     # Calculate means
     mean_v10 = v10_times.mean()
@@ -999,8 +1071,8 @@ def simulate_lapwise_weight_threshold_effect(model, laps, df_random, car_type='V
     print(f"P-value: {p_value:.6f}")
 
     if p_value < 0.05:
-        print("✅ Reject Null Hypothesis — Lower weight leads to significantly faster laps.")
+        print(" Reject Null Hypothesis — Lower weight leads to significantly faster laps.")
     else:
-        print("❌ Fail to Reject Null — No significant lap time difference based on weight.")
+        print("Fail to Reject Null — No significant lap time difference based on weight.")
 
     return low_weight_laps, high_weight_laps

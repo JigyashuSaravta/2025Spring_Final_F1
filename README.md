@@ -1,5 +1,3 @@
----
-
 # F1 Lap Time Prediction & Monte Carlo Simulation
 
 This project uses real-world telemetry and weather data from the Formula 1 Monaco Grand Prix (2018–2024) to model race performance using a Random Forest Regressor and simulate multiple race outcomes using a Monte Carlo approach. It is built with `FastF1`, `scikit-learn`, and `pandas`.
@@ -23,6 +21,8 @@ This project uses real-world telemetry and weather data from the Formula 1 Monac
   * Train the model
   * Run simulations
   * Generate outputs and statistics
+
+---
 
 ## Setup Instructions
 

@@ -6,7 +6,7 @@ This project uses real-world telemetry and weather data from the Formula 1 Monac
 
 ## Project Structure
 
-* **`main.py`**
+* `main.py`
   Contains **all core functions** for:
 
   * Fetching raw telemetry, lap, and weather data
@@ -16,7 +16,7 @@ This project uses real-world telemetry and weather data from the Formula 1 Monac
   * Training a Random Forest model
   * Running Monte Carlo simulations
 
-* **`analysis_and_mcsim.py`**
+* `analysis_and_mcsim.py`
   This is the **driver script**. It calls and executes the functions from `main.py` to:
 
   * Build the dataset
@@ -37,14 +37,9 @@ This project requires Python 3.9+ and the following libraries:
 
 pip install fastf1 pandas numpy scikit-learn matplotlib
 
-
-**Note:** The first time you run FastF1, it may take some time to cache session data.
-
 ---
 
 ## Running the Project
-
-### Step 1: Execute the Main Pipeline
 
 This will fetch all data, preprocess it, and create the final merged dataset.
 

@@ -28,7 +28,8 @@ This project uses real-world telemetry and weather data from the Formula 1 Monac
 
 ### 1. Clone the Repository
 
-git clone https://github.com/JigyashuSaravta/2025Spring_Final_F1
+git clone https://github.com/JigyashuSaravta/2025Spring_Final_F1.git
+
 cd f1-laptime-mcsim
 
 ### 2. Install Required Packages

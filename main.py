@@ -1071,8 +1071,8 @@ def simulate_lapwise_weight_threshold_effect(model, laps, df_random, car_type='V
     print(f"P-value: {p_value:.6f}")
 
     if p_value < 0.05:
-        print(" Reject Null Hypothesis — Lower weight leads to significantly faster laps.")
+        print(" Reject Null Hypothesis: Lower weight leads to significantly faster laps.")
     else:
-        print("Fail to Reject Null — No significant lap time difference based on weight.")
+        print("Fail to Reject Null: No significant lap time difference based on weight.")
 
     return low_weight_laps, high_weight_laps
